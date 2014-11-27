@@ -8,7 +8,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 import PyQt4.Qwt5 as Qwt
 from main_windows_resizable_GG import Ui_MainWindow
-from pyqtgraph.parametertree import Parameter, ParameterTree                                            
+from pyqtgraph.parametertree import Parameter, ParameterTree
 import shutil
 import os
 
@@ -17,8 +17,6 @@ if os.name == 'nt': # Windows
 else:
     basepath = '.'   # current directory
 
-
-
 ##############################
 #####    Functions    #####
 ##############################
@@ -26,16 +24,57 @@ else:
 ###########
 # Classes #
 ###########
+
+
+class Curve(object):
+    """
+    A curve is simple object which contains basically: 
+    * filename (full_path)
+    * graph object 
+    * item in the list
+    * short_name
+    all together
+      
+    """
+    def __init__(self, filename=None, name=None):
+        """
+        Constructor of the class: 
+        
+        @param filename: name of the file containing the spectrum
+        """
+        self.graph = None
+        self.data = None
+        self.item = None
+        if filename:
+            self.full_path = os.path.abspath(filename)
+            self.load_curve()
+        else:
+            self.full_path = self.filename = ""
+
+        if name:
+            self.name = name
+        else:
+            self.name = os.path.basename(self.full_path) or "Undefined"
+        self.item = QtGui.QStandardItem(self.name)
+        self.item.setCheckable(True)
+        self.item.setCheckState(2)
+
+    def __repr__(self):
+        """ how I represent myself"""
+        return self.name
+
+    def load_curve(self):
+        self.data = np.genfromtxt(self.full_path, skip_header=18, skip_footer=1, usecols=(0, 1), autostrip=True)
+
+
 class MainWindow(QtGui.QMainWindow):
     def __init__(self):
         QtGui.QMainWindow.__init__(self)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.spectra_data = {} #key: filename, value: curves object
         self.curves = {} #key: filename, value: graph object
-        self.clicked_spectrum  = []
-        self.spectra_filenames = {}
-        
+        self.clicked_spectrum = []
+
         self.model = QtGui.QFileSystemModel()
         filters = QStringList("*.txt")
         self.model.setNameFilters(filters) # allows to "grey" files that have not the right extension
@@ -52,7 +91,7 @@ class MainWindow(QtGui.QMainWindow):
         self.ui.files_treeView.doubleClicked.connect(self.on_treeview_clicked)
 
 ###List of loaded files####
- 
+
         self.list = QtGui.QListView()
 
         self.model_list = QtGui.QStandardItemModel(self.list)
@@ -112,7 +151,7 @@ class MainWindow(QtGui.QMainWindow):
         {'name': 'Apply', 'type': 'action' }
         ]},
         {'name': 'Update', 'type': 'action' }
-        ]           
+        ]
 
         self.p = Parameter.create(name='params', type='group', children=self.params)
 
@@ -120,7 +159,7 @@ class MainWindow(QtGui.QMainWindow):
         self.ui.widget.setParameters(self.p, showTop=False)
 
 
-		
+
 ### Parameters signals ###
  # some examples ....
     def change_legend_on_off(self):
@@ -135,13 +174,13 @@ class MainWindow(QtGui.QMainWindow):
             self.ui.graphicsView.showLabel('bottom', show=False)
         else:
             self.ui.graphicsView.showLabel('bottom', show=True)
-            
+
     def change_Y_left_axis_on_off(self):
         if Y_left_axis.value() == False:
             self.ui.graphicsView.showLabel('left', show=False)
         else:
             self.ui.graphicsView.showLabel('left', show=True)
-            
+
     def change_Y_right_axis_on_off(self):
         if Y_right_axis.value() == False:
             self.ui.graphicsView.showLabel('right', show=False)
@@ -149,7 +188,7 @@ class MainWindow(QtGui.QMainWindow):
         else:
             self.ui.graphicsView.showLabel('right', show=True)
             self.ui.graphicsView.showAxis('right', show=True)
-            
+
     def change_X_axis_min_max(self):
         self.ui.graphicsView.setXRange(p.param('Graphics Parameters').param('X_min').value(), self.p.param('Graphics Parameters').param('X_max').value(), padding=None, update=True)
 
@@ -161,59 +200,51 @@ class MainWindow(QtGui.QMainWindow):
     def change_pen_style(self):
         global pen_line_style
         pen_line_style = p.param('Graphics Parameters').param('Line_style').value()
-        print pen_line_style    
+        print pen_line_style
 
     def change_colorization(self):
         nPts_list = model_list.rowCount()
         colorization.getLookupTable(nPts=nPts_list) # --> should be len() of graphs that are ploted
         print colorization.getLookupTable(nPts=nPts_list)
 
+    def load_curve(self, curve):
+        curve.graph = pg.PlotDataItem(curve.data, name=curve.item.text(),
+                                      pen={'color': (255, 0, 0), 'width':self.p.param('Graphics Parameters').param('Line_width').value(),
+                                           'style':self.p.param('Graphics Parameters').param('Line_style').value()})
+        self.on_item_changed(curve.item)  # Here I send the item not the curve
 
-
-    def load_curve(self, filePath):
-        data = np.genfromtxt(filePath, skip_header=18, skip_footer=1, usecols=(0, 1), autostrip=True)
-        self.spectra_data[filePath] = data
-        graph = pg.PlotDataItem(self.spectra_data[filePath], name=self.item.text(), pen={'color': (255,0,0), 'width':self.p.param('Graphics Parameters').param('Line_width').value(), 'style':self.p.param('Graphics Parameters').param('Line_style').value()})
-        self.curves[filePath] = graph
-        self.on_item_changed(graph)
-
-        
-    def on_item_changed(self, graph):
-#        graph = self.curves.get(item.text())
-#        if self.spectra_data is None:
-#            return    
-        if self.item.checkState() == QtCore.Qt.Checked:
-             self.ui.graphicsView.addItem(graph, clickable=True)
+    def on_item_changed(self, item):
+        """
+        @param item: the one changed ! 
+        """
+        print("on_item_changed")
+        curve = self.curves.get(str(item.text()))
+        print("curve: %s" % curve)
+        if curve.item.checkState() == QtCore.Qt.Checked:
+            self.ui.graphicsView.addItem(curve.graph, clickable=True)
+            print("Add plot %s" % curve)
         else:
-             self.ui.graphicsView.removeItem(graph)
-             print 'je deplote'
+            self.ui.graphicsView.removeItem(curve.graph)
+            print("Removed plot %s" % curve)
 
-        
     @QtCore.pyqtSlot(QtCore.QModelIndex)
     def on_treeview_clicked(self, index):
- 
+
         indexItem = self.model.index(index.row(), 0, index.parent())
 
         fileName = self.model.fileName(indexItem)
         fileName = str(fileName)
-  
+
         filePath = self.model.filePath(indexItem)
         filePath = str(filePath)
 
         self.clicked_spectrum.append([(fileName), (filePath)])
-        self.spectra_filenames[filePath] = fileName
+        print(fileName, filePath)
+        curve = Curve(filePath, fileName)
+        self.curves[fileName] = curve
+        self.load_curve(curve)
+        self.model_list.appendRow(curve.item)
 
-        self.item = QtGui.QStandardItem(filePath)
- 
-        self.item.setCheckable(True)
-        self.item.setCheckState(2)
-
-        self.load_curve(filePath)
-
-        #self.on_item_changed(self.item)
-    
-        self.model_list.appendRow(self.item)
-		
     def load_selected_files(self):
     #items = self.ui.files_treeView.selectedIndexes()
     #model = QtGui.QFileSystemModel()
@@ -230,7 +261,7 @@ class MainWindow(QtGui.QMainWindow):
 
     def plot_selected_data(self):
         print 'hello'
-		
+
     def save_the_graph(self):
         exporter = pg.exporters.ImageExporter.ImageExporter(ui.graphicsView.plotItem)
         exporter.parameters()['width'] = 1920
@@ -240,14 +271,14 @@ class MainWindow(QtGui.QMainWindow):
         dst = self.ui.PathToFile_lineEdit.text() #'C:\Users\ggotthar\Desktop\graphique_exporte.png'
         shutil.move(src, dst)
         print self.ui.PathToFile_lineEdit.text(), 'is the path where you saved the graph!'
-		
+
         self.p = Parameter.create(name='params', type='group', children=self.params)
 
         self.ui.widget.setSelectionMode(QtGui.QAbstractItemView.ExtendedSelection)
         self.ui.widget.setParameters(self.p, showTop=False)
 
-	
-	
+
+
 	graph_param = self.p.param('Graphics Parameters')
 	legonoff = graph_param.param('Legend')
 	legonoff.sigValueChanged.connect(change_legend_on_off)
@@ -274,8 +305,8 @@ class MainWindow(QtGui.QMainWindow):
 
 	colorization = self.ui.graphicsView_2
 	colorization.sigGradientChanged.connect(change_colorization)
-        
-    
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -285,14 +316,14 @@ if __name__ == "__main__":
 ##################### end of program#################
 
 
-       
+
 
 def remove_specific_graph():
     print 'stopped at remove_specific_graph'
     self.ui.graphicsView.removeItem(graph)
-    
 
-        
+
+
 
 
 def plotClicked():
@@ -319,7 +350,7 @@ def plotClicked():
 #        else:
 #            c.setPen('rgb'[i], width=1)
 #    self.ui.graphicsView.addItem(graph)
-    
+
 #pg.plot.sigClicked.connect(plotClicked)
 #add --> clickable=True when adding data
 #can allow to select curves and higlight them to be manipulated
